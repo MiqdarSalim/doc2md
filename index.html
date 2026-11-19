@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Doc2MD – DOCX/PDF ke Markdown</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--tx:#1c1b18;--mu:#6b685f;--bd:#dedbd2;--ac:#c2410c;--ac2:#fff;--ok:#15803d;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171612;--card:#201f1a;--tx:#ece9df;--mu:#9b978a;--bd:#38362d;--ac:#fb923c;--ac2:#1c1b18;--ok:#4ade80;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#171612;--card:#201f1a;--tx:#ece9df;--mu:#9b978a;--bd:#38362d;--ac:#fb923c;--ac2:#1c1b18;--ok:#4ade80;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:860px;margin:0 auto;padding:28px 18px 60px}
+h1{font-size:26px;margin:0 0 4px;letter-spacing:-.02em}
+.sub{color:var(--mu);margin:0 0 22px}
+.opts{display:flex;flex-wrap:wrap;gap:14px;align-items:center;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:14px}
+.opts label{display:flex;gap:8px;align-items:center;color:var(--mu);font-size:14px}
+select{background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:6px 8px;font:inherit}
+#drop{border:2px dashed var(--bd);border-radius:16px;padding:44px 20px;text-align:center;background:var(--card);cursor:pointer;transition:.15s}
+#drop.on,#drop:hover{border-color:var(--ac)}
+#drop b{display:block;font-size:17px;margin-bottom:4px}
+#drop span{color:var(--mu);font-size:13.5px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-top:14px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.name{font-weight:600;word-break:break-all}
+.meta{color:var(--mu);font-size:13px}
+.ok{color:var(--ok)}.err{color:#dc2626}
+button{background:var(--ac);color:var(--ac2);border:0;border-radius:8px;padding:7px 12px;font:inherit;font-size:13.5px;cursor:pointer}
+button.g{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+.pbox{margin-top:10px;border:1px solid var(--ac);border-radius:8px;padding:10px 12px;background:var(--bg)}
+.pbox b{font-size:13.5px}.pbox pre{margin:6px 0 8px;white-space:pre-wrap;font:12.5px/1.5 ui-monospace,Consolas,monospace}
+textarea{width:100%;height:170px;margin-top:10px;background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:10px;font:12.5px/1.5 ui-monospace,Consolas,monospace;resize:vertical}
+.bar{height:4px;background:var(--bd);border-radius:2px;margin-top:8px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--ac);transition:.2s}
+.note{color:var(--mu);font-size:12.5px;margin-top:22px}
+</style>
+</head>
+<body>
+<main>
+<h1>Doc2MD</h1>
+<p class="sub">Ubah DOCX &amp; PDF menjadi Markdown yang hemat token untuk AI. Semua diproses lokal di browser, file tidak diunggah ke mana pun.</p>
+
+<div class="opts">
+  <label>Gambar
+    <select id="img">
+      <option value="zip">Ekstrak ke folder images/ (hemat token)</option>
+      <option value="inline">Sematkan base64 di dalam .md</option>
+      <option value="none">Abaikan gambar</option>
+    </select>
+  </label>
+  <label><input type="checkbox" id="clean" checked> Hapus header/footer berulang (PDF)</label>
+  <label><input type="checkbox" id="pm" checked> Penanda halaman &lt;!-- hal. N --&gt;</label>
+  <label>OCR <select id="ocr"><option value="auto">Otomatis (halaman tanpa teks)</option><option value="all">Paksa semua halaman</option><option value="off">Mati</option></select></label>
+  <label>Bahasa <select id="lang"><option value="ind+eng">Indonesia + Inggris</option><option value="eng">Inggris</option><option value="ind">Indonesia</option></select></label>
+  <label><input type="checkbox" id="ocrimg"> Baca teks di dalam gambar (OCR)</label>
+</div>
+
+<div id="drop"><b>Tarik file ke sini atau klik untuk memilih</b><span>.docx dan .pdf · bisa banyak file sekaligus · file .doc lama / Google Docs: simpan dulu sebagai .docx</span></div>
+<input id="file" type="file" accept=".docx,.pdf" multiple hidden>
+<div id="out"></div>
+<p class="note">Jika hasil memuat penanda [?], penanda halaman, atau teks OCR, kartu hasil akan menampilkan prompt pendamping yang perlu disalin ke AI. Setiap file menampilkan laporan verifikasi (kata hilang, halaman OCR, tabel terdeteksi). OCR berjalan di browser dan mengunduh data bahasa saat pertama dipakai, jadi lebih lambat. Belum ditangani: PDF multi-kolom (urutan baca bisa tertukar), file .doc lama (simpan sebagai .docx), garis bawah &amp; warna.</p>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/turndown@7.1.2/dist/turndown.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/turndown-plugin-gfm@1.0.2/dist/turndown-plugin-gfm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const EXT={'image/png':'png','image/jpeg':'jpg','image/gif':'gif','image/bmp':'bmp','image/svg+xml':'svg','image/tiff':'tiff','image/x-emf':'emf','image/x-wmf':'wmf'};
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const td=new TurndownService({headingStyle:'atx',bulletListMarker:'-',codeBlockStyle:'fenced',emDelimiter:'*',hr:'---'});
+td.use(turndownPluginGfm.gfm);
+td.addRule('noimg',{filter:n=>n.nodeName==='IMG'&&!n.getAttribute('src'),replacement:()=>''});
+
+const tidy=s=>s.replace(/\u00a0/g,' ').replace(/[ \t]+$/gm,'').replace(/^(\s*)(-|\d+\.)[ ]{2,3}(?=\S)/gm,'$1$2 ').replace(/\n{3,}/g,'\n\n').trim()+'\n';
+
+/* ---------- DOCX ---------- */
+async function docx2md(file,o,base){
+  const imgs=[];let n=0;
+  const r=await mammoth.convertToHtml({arrayBuffer:await file.arrayBuffer()},{
+    styleMap:["strike => s"],
+    convertImage:mammoth.images.imgElement(async im=>{
+      const b64=await im.read("base64");n++;
+      const alt=await ocrAlt(/image\/(png|jpe?g|gif|bmp)/.test(im.contentType)?`data:${im.contentType};base64,${b64}`:null,o,im.altText||('gambar '+n));
+      if(o.img==='none')return{src:'',alt:''};
+      if(o.img==='inline')return{src:`data:${im.contentType};base64,${b64}`,alt};
+      const name=`${base}_img${n}.${EXT[im.contentType]||'bin'}`;
+      imgs.push({name,b64});
+      return{src:'images/'+name,alt};
+    })
+  });
+  const doc=new DOMParser().parseFromString(r.value,'text/html');
+  doc.querySelectorAll('p').forEach(p=>{if(!p.textContent.trim()&&!p.querySelector('img'))p.remove()});
+  doc.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(h=>h.querySelectorAll('strong,em,b,i').forEach(e=>e.replaceWith(...e.childNodes)));
+  doc.querySelectorAll('td p,th p').forEach(p=>p.replaceWith(...p.childNodes,' '));
+  doc.querySelectorAll('table').forEach(t=>{
+    const fr=t.querySelector('tr');
+    if(fr&&!fr.querySelector('th'))fr.querySelectorAll('td').forEach(c=>{const h=doc.createElement('th');h.innerHTML=c.innerHTML;c.replaceWith(h)});
+  });
+  const md=tidy(td.turndown(doc.body));
+  const ms=[...new Set(r.messages.filter(m=>m.type==='warning').map(m=>m.message))];
+  if(ms.length)o.rep.push(`⚠ ${ms.length} elemen DOCX tidak dikenali dan bisa hilang (mis. kotak teks): `+ms.slice(0,3).join('; '));
+  const raw=(await mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()})).value.split(/\s+/).filter(Boolean).length;
+  const got=md.replace(/!\[[^\]]*\]\([^)]*\)/g,' ').replace(/[#*|>~`_\-\[\]()\\]/g,' ').split(/\s+/).filter(Boolean).length;
+  o.rep.push(got<raw*.95?`⚠ Verifikasi: ${got} kata di Markdown vs ${raw} di dokumen, kemungkinan ada teks hilang`:`✓ Verifikasi jumlah kata lolos (${got}/${raw})`);
+  return{md,imgs};
+}
+
+/* ---------- PDF ---------- */
+const getObj=(page,name)=>new Promise(res=>{
+  const t=setTimeout(()=>res(null),3000);
+  try{(name.startsWith('g_')?page.commonObjs:page.objs).get(name,v=>{clearTimeout(t);res(v)})}catch(e){clearTimeout(t);res(null)}
+});
+function toCanvas(im){
+  const w=im.width,h=im.height;if(!w||!h||w<40||h<40)return null;
+  const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');
+  if(im.bitmap){x.drawImage(im.bitmap,0,0);return c}
+  const d=im.data;if(!d)return null;const out=x.createImageData(w,h);
+  if(d.length===w*h*4)out.data.set(d);
+  else if(d.length===w*h*3){for(let i=0,j=0;i<d.length;i+=3,j+=4){out.data[j]=d[i];out.data[j+1]=d[i+1];out.data[j+2]=d[i+2];out.data[j+3]=255}}
+  else if(d.length===w*h){for(let i=0,j=0;i<d.length;i++,j+=4){out.data[j]=out.data[j+1]=out.data[j+2]=d[i];out.data[j+3]=255}}
+  else return null;
+  x.putImageData(out,0,0);return c;
+}
+/* ---------- OCR ---------- */
+let W=null,WL='';
+async function getW(o){
+  if(W&&WL===o.lang)return W;
+  if(W)await W.terminate();
+  W=await Tesseract.createWorker(o.lang);WL=o.lang;return W;
+}
+async function ocrAlt(src,o,def){
+  if(!o.ocrImg||!src)return def;
+  try{const {data}=await (await getW(o)).recognize(src);
+    const t=data.text.replace(/[\[\]\r\n]+/g,' ').replace(/\s+/g,' ').trim();
+    return data.confidence>=60&&t.length>=8?`${def} (teks OCR: ${t.slice(0,400)})`:def}catch(e){return def}
+}
+async function ocrPage(page,o){
+  const S=2.5,vp=page.getViewport({scale:S}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;
+  await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
+  const {data}=await (await getW(o)).recognize(c);let low=0;
+  const lines=data.lines.filter(l=>l.text.trim()).map(l=>{
+    const t=l.words.map(w=>{if(w.confidence<65&&/\w/.test(w.text)){low++;return w.text+'[?]'}return w.text}).join(' ').trim();
+    return{y:-l.bbox.y0/S,sz:(l.bbox.y1-l.bbox.y0)/S*.8,x0:l.bbox.x0/S,plain:t,md:t,allBold:false,cells:[]};
+  });
+  return{lines,low};
+}
+function imgPos(ops){
+  const O=pdfjsLib.OPS,st=[],out=[];let m=[1,0,0,1,0,0];
+  const mul=(a,b)=>[a[0]*b[0]+a[1]*b[2],a[0]*b[1]+a[1]*b[3],a[2]*b[0]+a[3]*b[2],a[2]*b[1]+a[3]*b[3],a[4]*b[0]+a[5]*b[2]+b[4],a[4]*b[1]+a[5]*b[3]+b[5]];
+  ops.fnArray.forEach((f,i)=>{const a=ops.argsArray[i];
+    if(f===O.save)st.push(m);else if(f===O.restore)m=st.pop()||m;else if(f===O.transform)m=mul(a,m);
+    else if(f===O.paintImageXObject||f===O.paintJpegXObject)out.push({name:a[0],y:m[5]+Math.abs(m[3])})});
+  return out;
+}
+async function pageImages(page,ops,pn,base,o,imgs){
+  const seen=new Set(),res=[];let k=0;
+  for(const {name,y} of imgPos(ops)){
+    if(seen.has(name))continue;seen.add(name);
+    const im=await getObj(page,name);if(!im)continue;
+    const c=toCanvas(im);if(!c)continue;k++;
+    const def=`gambar hal.${pn}-${k}`;let src;
+    if(o.img==='inline')src=c.toDataURL('image/png');
+    else{const nm=`${base}_p${pn}_${k}.png`;imgs.push({name:nm,blob:await new Promise(r=>c.toBlob(r,'image/png'))});src='images/'+nm}
+    res.push({y,img:`![${await ocrAlt(c,o,def)}](${src})`});
+  }
+  return res;
+}
+function buildLines(items,page){
+  const fi=f=>{try{const n=page.commonObjs.get(f).name||'';return{b:/bold|black|heavy|semibold/i.test(n),i:/italic|oblique/i.test(n)}}catch(e){return{b:false,i:false}}};
+  const its=items.filter(t=>t.str!==undefined&&t.str!=='').map(t=>({s:t.str.normalize('NFKC').replace(/\u00ad/g,''),x:t.transform[4],y:t.transform[5],sz:Math.hypot(t.transform[0],t.transform[1])||t.height,w:t.width,f:fi(t.fontName)}));
+  its.sort((a,b)=>b.y-a.y||a.x-b.x);
+  const lines=[];
+  for(const it of its){
+    const L=lines[lines.length-1];
+    if(L&&Math.abs(L.y-it.y)<Math.max(it.sz,L.sz)*.5)L.its.push(it);
+    else lines.push({y:it.y,sz:it.sz,its:[it]});
+  }
+  for(const L of lines){
+    L.its.sort((a,b)=>a.x-b.x);L.sz=Math.max(...L.its.map(i=>i.sz));L.x0=L.its[0].x;
+    const segs=[];let end=null;const cells=[];
+    for(const it of L.its){
+      let t=it.s;if(end===null||it.x-end>it.sz*1.2)cells.push({x:it.x,t:''});cells[cells.length-1].t+=it.s;
+      if(end!==null&&it.x-end>it.sz*.15&&!/^\s/.test(t)&&segs.length&&!/\s$/.test(segs[segs.length-1].t))t=' '+t;
+      const lt=segs[segs.length-1];
+      if(lt&&lt.b===it.f.b&&lt.i===it.f.i)lt.t+=t;else segs.push({t,b:it.f.b,i:it.f.i});
+      end=it.x+it.w;
+    }
+    L.cells=cells.map(c=>({x:c.x,t:c.t.replace(/\s+/g,' ').trim()})).filter(c=>c.t);L.plain=segs.map(s=>s.t).join('').replace(/\s+/g,' ').trim();
+    L.allBold=segs.every(s=>s.b||!s.t.trim());
+    L.md=segs.map(s=>{const m=s.t.match(/^(\s*)([\s\S]*?)(\s*)$/);if(!m[2])return s.t;let c=m[2];if(s.b&&s.i)c=`***${c}***`;else if(s.b)c=`**${c}**`;else if(s.i)c=`*${c}*`;return m[1]+c+m[3]}).join('').replace(/\s+/g,' ').trim();
+  }
+  return lines;
+}
+const LM=/^([•▪◦●■‣\-–—*]|\d+[.)])\s+(.*)/;
+async function pdf2md(file,o,base,prog){
+  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+  const N=pdf.numPages,pages=[],imgs=[];let nocr=0,nlow=0,ntab=0;
+  for(let p=1;p<=N;p++){
+    const page=await pdf.getPage(p);
+    const ops=await page.getOperatorList();
+    const tc=await page.getTextContent();
+    let lines=buildLines(tc.items,page),pim=[];
+    const nch=lines.reduce((a,l)=>a+l.plain.length,0);
+    if(o.ocr==='all'||(o.ocr==='auto'&&nch<30)){const r=await ocrPage(page,o);lines=r.lines;nlow+=r.low;nocr++}
+    else if(o.img!=='none'){try{pim=await pageImages(page,ops,p,base,o,imgs)}catch(e){}}
+    if(!lines.length&&!pim.length)o.rep.push(`⚠ Hal. ${p}: tidak ada teks terbaca`);
+    pim.forEach(i=>lines.push({y:i.y,img:i.img,plain:'',sz:1}));
+    lines.sort((a,b)=>b.y-a.y);
+    pages.push({lines});prog(p/N);
+  }
+  const cnt={};let chars=0;
+  pages.forEach(pg=>pg.lines.forEach(l=>{const k=Math.round(l.sz);cnt[k]=(cnt[k]||0)+l.plain.length;chars+=l.plain.length}));
+  const body=+Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0]?.[0]||10;
+  if(o.ocr==='off'&&chars<15*N)throw new Error('PDF tampaknya hasil scan (tanpa teks). Aktifkan OCR.');
+  if(o.clean&&N>=3){
+    const key=l=>l.plain.replace(/\d+/g,'#'),seen={};
+    pages.forEach(pg=>{pg.ed=new Set([...pg.lines.slice(0,2),...pg.lines.slice(-2)].filter(l=>l.plain));new Set([...pg.ed].map(key)).forEach(k=>seen[k]=(seen[k]||0)+1)});
+    pages.forEach(pg=>{pg.lines=pg.lines.filter(l=>!(pg.ed.has(l)&&seen[key(l)]>=Math.max(3,N*.5)))});
+  }
+  const blocks=[];let prev=null;
+  const row=l=>l&&!l.img&&l.cells.length>=2&&!LM.test(l.plain);
+  const same=(a,b)=>a.cells.length===b.cells.length&&a.cells.every((c,k)=>Math.abs(c.x-b.cells[k].x)<a.sz*5);
+  for(let pi=0;pi<N;pi++){
+    const L=pages[pi].lines;let py=null;
+    if(o.pm){blocks.push({type:'m',t:`<!-- hal. ${pi+1} -->`});prev=null}
+    for(let i=0;i<L.length;i++){
+      const l=L[i];
+      if(l.img){blocks.push({type:'img',t:l.img});prev=null;py=null;continue}
+      if(!l.plain)continue;
+      if(row(l)){
+        let j=i;while(j+1<L.length&&row(L[j+1])&&same(l,L[j+1]))j++;
+        const n=j-i+1;
+        if(n>=3||(n===2&&l.cells.length>=3)){
+          const rows=L.slice(i,j+1).map(r=>'| '+r.cells.map(c=>c.t.replace(/\|/g,'\\|')).join(' | ')+' |');
+          rows.splice(1,0,'|'+' --- |'.repeat(l.cells.length));
+          blocks.push({type:'t',t:rows.join('\n')});prev=null;py=null;ntab++;i=j;continue;
+        }
+      }
+      const r=l.sz/body,hl=r>=1.6?1:r>=1.3?2:r>=1.12?3:0,lm=l.plain.match(LM),cur=prev;
+      const join=cur&&cur.type==='p'&&!hl&&!lm&&(py===null?!/[.!?:;]$/.test(cur.t):cur.y-l.y<l.sz*1.7);
+      const cont=cur&&cur.type==='li'&&!hl&&!lm&&l.x0>cur.x0&&py!==null&&cur.y-l.y<l.sz*1.7;
+      if(join||cont){cur.t=/[a-z]-$/i.test(cur.t)?cur.t.slice(0,-1)+l.md:cur.t+' '+l.md;cur.y=l.y}
+      else if(hl){prev={type:'h',t:'#'.repeat(hl)+' '+l.plain,y:l.y,x0:l.x0};blocks.push(prev)}
+      else if(lm){const num=/^\d/.test(lm[1]);prev={type:'li',t:(num?lm[1].replace(')','.'):'-')+' '+lm[2],y:l.y,x0:l.x0};blocks.push(prev)}
+      else{prev={type:'p',t:l.allBold&&l.plain.length<80?'**'+l.plain+'**':l.md,y:l.y,x0:l.x0};blocks.push(prev)}
+      py=l.y;
+    }
+  }
+  let md='';
+  blocks.forEach((b,i)=>{const pb=blocks[i-1];md+=(i?(pb.type==='li'&&b.type==='li'?'\n':'\n\n'):'')+b.t});
+  if(nocr)o.rep.push(`⚠ OCR dipakai di ${nocr} halaman. Kata yang diragukan ditandai [?] (${nlow} kata). Cek ulang angka, nama, dan istilah penting.`);
+  if(ntab)o.rep.push(`⚠ ${ntab} tabel terdeteksi dari posisi kolom, verifikasi isinya.`);
+  o.rep.push(`✓ ${N} halaman, ${chars.toLocaleString('id')} karakter teks`);
+  return{md:tidy(md),imgs};
+}
+
+/* ---------- UI ---------- */
+const results=[];
+function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+async function pack(r){
+  if(!r.imgs.length)return{blob:new Blob([r.md],{type:'text/markdown'}),name:r.base+'.md'};
+  const z=new JSZip();z.file(r.base+'.md',r.md);
+  r.imgs.forEach(i=>z.file('images/'+i.name,i.blob||i.b64,i.b64?{base64:true}:{}));
+  return{blob:await z.generateAsync({type:'blob'}),name:r.base+'.zip'};
+}
+async function handle(file){
+  const o={img:$('#img').value,clean:$('#clean').checked,pm:$('#pm').checked,ocr:$('#ocr').value,lang:$('#lang').value,ocrImg:$('#ocrimg').checked,rep:[]};
+  const base=file.name.replace(/\.[^.]+$/,'').replace(/[^\w\-]+/g,'_');
+  const card=document.createElement('div');card.className='card';
+  card.innerHTML='<div class="row"><div><div class="name"></div><div class="meta">Memproses…</div></div><div class="act"></div></div><div class="bar"><i></i></div>';
+  card.querySelector('.name').textContent=file.name;$('#out').prepend(card);
+  const meta=card.querySelector('.meta'),bar=card.querySelector('.bar i');
+  try{
+    const ext=file.name.split('.').pop().toLowerCase();
+    let r;
+    if(ext==='docx'){bar.style.width='50%';r=await docx2md(file,o,base)}
+    else if(ext==='pdf')r=await pdf2md(file,o,base,f=>bar.style.width=(f*100)+'%');
+    else throw new Error('Format tidak didukung (gunakan .docx atau .pdf)');
+    r.base=base;results.push(r);
+    const tok=Math.ceil(r.md.length/4);
+    meta.innerHTML='';meta.className='meta ok';
+    meta.textContent=`Selesai · ${r.md.length.toLocaleString('id')} karakter · ≈${tok.toLocaleString('id')} token`+(r.imgs.length?` · ${r.imgs.length} gambar`:'');
+    const act=card.querySelector('.act');
+    const b1=document.createElement('button');b1.textContent=r.imgs.length?'Unduh .zip':'Unduh .md';
+    b1.onclick=async()=>{const p=await pack(r);dl(p.blob,p.name)};
+    const b2=document.createElement('button');b2.className='g';b2.textContent='Salin';b2.style.marginLeft='6px';
+    b2.onclick=()=>{navigator.clipboard.writeText(r.md).then(()=>{b2.textContent='Tersalin ✓';setTimeout(()=>b2.textContent='Salin',1500)})};
+    act.append(b1,b2);
+    if(o.rep.length){const ul=document.createElement('ul');ul.className='meta';o.rep.forEach(t=>{const li=document.createElement('li');li.textContent=t;ul.append(li)});card.append(ul)}
+    const pr=[];
+    if(/\[\?\]/.test(r.md))pr.push('Tanda [?] berarti hasil OCR yang ragu-ragu. Jangan menebak kata tersebut; sebutkan bahwa teksnya tidak pasti.');
+    if(o.pm&&ext==='pdf')pr.push('Penanda <!-- hal. N --> adalah nomor halaman asli. Sebutkan nomor halaman saat mengutip.');
+    if(/teks OCR:/.test(r.md))pr.push('Teks setelah "teks OCR:" pada alt gambar adalah hasil OCR dan bisa salah baca.');
+    if(pr.length){
+      pr.push('Jawab hanya berdasarkan dokumen ini. Jika informasinya tidak ada, katakan tidak ada.');
+      const bx=document.createElement('div');bx.className='pbox';
+      const hd=document.createElement('b');hd.textContent='⚠ Tambahkan teks ini ke prompt Anda saat mengirim file ke AI:';
+      const pe=document.createElement('pre');pe.textContent=pr.join('\n');
+      const bt=document.createElement('button');bt.className='g';bt.textContent='Salin prompt';
+      bt.onclick=()=>navigator.clipboard.writeText(pe.textContent).then(()=>{bt.textContent='Tersalin ✓';setTimeout(()=>bt.textContent='Salin prompt',1500)});
+      bx.append(hd,pe,bt);card.append(bx);
+    }
+    const ta=document.createElement('textarea');ta.readOnly=true;ta.value=r.md.length>60000?r.md.slice(0,60000)+'\n\n… (pratinjau dipotong, file lengkap ada di unduhan)':r.md;card.append(ta);
+    bar.parentNode.remove();
+  }catch(e){meta.className='meta err';meta.textContent='Gagal: '+(e.message||e);bar.parentNode.remove()}
+}
+async function run(files){for(const f of files)await handle(f)}
+const drop=$('#drop'),inp=$('#file');
+drop.onclick=()=>inp.click();
+inp.onchange=()=>{run([...inp.files]);inp.value=''};
+drop.ondragover=e=>{e.preventDefault();drop.classList.add('on')};
+drop.ondragleave=()=>drop.classList.remove('on');
+drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');run([...e.dataTransfer.files])};
+</script>
+</body>
+</html>
